@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог товаров - Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+    <style>
+        .table-responsive {
+            border-radius: 0.375rem;
+        }
+
+        .btn-group > .btn.active {
+            background-color: rgba(255, 255, 255, 0.2) !important;
+            border-color: rgba(255, 255, 255, 0.5) !important;
+        }
+
+        .card {
+            border: none;
+            border-radius: 12px;
+        }
+
+        .card-header {
+            border-radius: 12px 12px 0 0 !important;
+            border-bottom: none;
+        }
+
+        .table th {
+            font-weight: 600;
+            font-size: 0.9rem;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .table td {
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+
+        .table tbody tr:hover {
+            background-color: rgba(0, 123, 255, 0.05);
+        }
+
+        .badge {
+            font-size: 0.75rem;
+        }
+
+        .form-range::-webkit-slider-thumb {
+            background-color: #0d6efd;
+        }
+
+        .form-range::-moz-range-thumb {
+            background-color: #0d6efd;
+            border: none;
+        }
+
+        .btn-outline-light:hover {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+
+        @media (max-width: 768px) {
+            .table-responsive {
+                font-size: 0.8rem;
+            }
+
+            .card-body {
+                padding: 1rem;
+            }
+
+            .btn-group {
+                flex-wrap: wrap;
+            }
+
+            .btn-group > .btn {
+                font-size: 0.8rem;
+                padding: 0.25rem 0.5rem;
+            }
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .text-truncate-custom {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sticky-top {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .shadow-sm {
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+        }
+
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .bg-gradient-success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .bg-gradient-info {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        }
+
+        .bg-gradient-warning {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    <script>
+        window.onload = async () => {
+            let email = 'admin@admin.com';
+            let password = 'foo'
+
+            let response = await fetch(`http://127.0.0.1:8000/api/token/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({email, password})
+            });
+
+            let data = await response.json();
+            localStorage.setItem('token', data.access);
+        }
+
+        const token = localStorage.getItem('token');
+
+        // Данные продуктов - будут загружены асинхронно
+        let originalProducts = [];
+        let currentProducts = [];
+        let sortState = {
+            column: null,
+            direction: 'asc'
+        };
+
+        // Chart.js графики
+        let priceChart = null;
+        let discountChart = null;
+
+        // Функция для загрузки продуктов
+        async function loadProducts() {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/api/products/', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                originalProducts = data;
+                currentProducts = [...originalProducts];
+
+                return data;
+            } catch (error) {
+                console.error('Ошибка загрузки продуктов:', error);
+                // Показать ошибку пользователю
+                showError('Не удалось загрузить данные о продуктах. Проверьте подключение к серверу.');
+                return [];
+            }
+        }
+
+        // Функция для отображения ошибки
+        function showError(message) {
+            const tbody = document.getElementById('productsTable');
+            if (tbody) {
+                tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <i class="fas fa-exclamation-triangle text-danger" style="font-size: 2rem;"></i>
+                    <p class="text-danger mt-2">${message}</p>
+                    <button class="btn btn-primary btn-sm" onclick="location.reload()">
+                        <i class="fas fa-redo"></i> Перезагрузить
+                    </button>
+                </td>
+            </tr>
+        `;
+            }
+        }
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Показать индикатор загрузки
+            showLoading();
+
+            // Загрузить продукты
+            await loadProducts();
+
+            if (originalProducts.length > 0) {
+                initializeFilters();
+                renderTable();
+                updateCharts();
+                updateResultsCount();
+            }
+        });
+
+        // Функция для показа индикатора загрузки
+        function showLoading() {
+            const tbody = document.getElementById('productsTable');
+            if (tbody) {
+                tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="text-muted mt-2">Загрузка данных...</p>
+                </td>
+            </tr>
+        `;
+            }
+        }
+
+        // Инициализация фильтров
+        function initializeFilters() {
+            if (originalProducts.length === 0) return;
+
+            // Слайдер цен
+            const priceRange = document.getElementById('priceRange');
+            const priceRangeValue = document.getElementById('priceRangeValue');
+            const maxPrice = Math.max(...originalProducts.map(p => p.price_discount));
+
+            if (priceRange) {
+                priceRange.max = maxPrice;
+                priceRange.value = maxPrice;
+            }
+
+            if (priceRangeValue) {
+                priceRangeValue.textContent = maxPrice.toLocaleString();
+            }
+
+            // События фильтров
+            const minPriceEl = document.getElementById('minPrice');
+            const maxPriceEl = document.getElementById('maxPrice');
+            const minRatingEl = document.getElementById('minRating');
+            const minReviewsEl = document.getElementById('minReviews');
+            const resetFiltersEl = document.getElementById('resetFilters');
+
+            if (minPriceEl) minPriceEl.addEventListener('input', debounce(applyFilters, 300));
+            if (maxPriceEl) maxPriceEl.addEventListener('input', debounce(applyFilters, 300));
+            if (priceRange) {
+                priceRange.addEventListener('input', (e) => {
+                    if (priceRangeValue) {
+                        priceRangeValue.textContent = parseInt(e.target.value).toLocaleString();
+                    }
+                    if (maxPriceEl) {
+                        maxPriceEl.value = e.target.value;
+                    }
+                    applyFilters();
+                });
+            }
+            if (minRatingEl) minRatingEl.addEventListener('change', applyFilters);
+            if (minReviewsEl) minReviewsEl.addEventListener('change', applyFilters);
+
+            // Сброс фильтров
+            if (resetFiltersEl) resetFiltersEl.addEventListener('click', resetFilters);
+
+            // Сортировка
+            const sortButtons = [
+                { id: 'sortName', column: 'title' },
+                { id: 'sortPrice', column: 'price_discount' },
+                { id: 'sortRating', column: 'rating' },
+                { id: 'sortReviews', column: 'review' }
+            ];
+
+            sortButtons.forEach(({ id, column }) => {
+                const button = document.getElementById(id);
+                if (button) {
+                    button.addEventListener('click', () => sortBy(column));
+                }
+            });
+        }
+
+        // Debounce функция
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // Применение фильтров
+        function applyFilters() {
+            const minPrice = parseFloat(document.getElementById('minPrice')?.value) || 0;
+            const maxPrice = parseFloat(document.getElementById('maxPrice')?.value) || Infinity;
+            const minRating = parseFloat(document.getElementById('minRating')?.value) || 0;
+            const minReviews = parseInt(document.getElementById('minReviews')?.value) || 0;
+
+            currentProducts = originalProducts.filter(product => {
+                return product.price_discount >= minPrice &&
+                    product.price_discount <= maxPrice &&
+                    product.rating >= minRating &&
+                    product.review >= minReviews;
+            });
+
+            renderTable();
+            updateCharts();
+            updateResultsCount();
+        }
+
+        // Сброс фильтров
+        function resetFilters() {
+            const minPriceEl = document.getElementById('minPrice');
+            const maxPriceEl = document.getElementById('maxPrice');
+            const priceRangeEl = document.getElementById('priceRange');
+            const priceRangeValueEl = document.getElementById('priceRangeValue');
+            const minRatingEl = document.getElementById('minRating');
+            const minReviewsEl = document.getElementById('minReviews');
+
+            if (minPriceEl) minPriceEl.value = '';
+            if (maxPriceEl) maxPriceEl.value = '';
+            if (priceRangeEl) {
+                priceRangeEl.value = priceRangeEl.max;
+                if (priceRangeValueEl) {
+                    priceRangeValueEl.textContent = priceRangeEl.max;
+                }
+            }
+            if (minRatingEl) minRatingEl.value = '';
+            if (minReviewsEl) minReviewsEl.value = '';
+
+            currentProducts = [...originalProducts];
+            sortState = { column: null, direction: 'asc' };
+
+            renderTable();
+            updateCharts();
+            updateResultsCount();
+        }
+
+        // Сортировка
+        function sortBy(column) {
+            if (sortState.column === column) {
+                sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortState.column = column;
+                sortState.direction = 'asc';
+            }
+
+            currentProducts.sort((a, b) => {
+                let aVal = a[column];
+                let bVal = b[column];
+
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (sortState.direction === 'asc') {
+                    return aVal > bVal ? 1 : -1;
+                } else {
+                    return aVal < bVal ? 1 : -1;
+                }
+            });
+
+            renderTable();
+            updateSortButtons();
+        }
+
+        // Обновление кнопок сортировки
+        function updateSortButtons() {
+            const buttons = ['sortName', 'sortPrice', 'sortRating', 'sortReviews'];
+            const columns = ['title', 'price_discount', 'rating', 'review'];
+
+            buttons.forEach((buttonId, index) => {
+                const button = document.getElementById(buttonId);
+                if (!button) return;
+
+                const icon = button.querySelector('i');
+                if (!icon) return;
+
+                if (sortState.column === columns[index]) {
+                    icon.className = sortState.direction === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+                    button.classList.add('active');
+                } else {
+                    icon.className = 'fas fa-sort';
+                    button.classList.remove('active');
+                }
+            });
+        }
+
+        // Отрисовка таблицы
+        function renderTable() {
+            const tbody = document.getElementById('productsTable');
+            if (!tbody) return;
+
+            if (currentProducts.length === 0) {
+                tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <i class="fas fa-search text-muted" style="font-size: 2rem;"></i>
+                    <p class="text-muted mt-2">Товары не найдены</p>
+                </td>
+            </tr>
+        `;
+                return;
+            }
+
+            tbody.innerHTML = currentProducts.map(product => {
+                const discount = ((product.price_original - product.price_discount) / product.price_original * 100).toFixed(1);
+                const discountAmount = product.price_original - product.price_discount;
+
+                return `
+            <tr>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <img src="${product.photo}" alt="${product.title}" class="me-2"
+                             style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"
+                        />
+                        <div>
+                            <div class="fw-bold" style="font-size: 0.9rem;">${product.title.length > 50 ? product.title.substring(0, 50) + '...' : product.title}</div>
+                            <small class="text-muted">ID: ${product.wb_id}</small>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <span class="text-decoration-line-through text-muted">${product.price_original.toLocaleString()} ₽</span>
+                </td>
+                <td>
+                    <span class="fw-bold text-success">${product.price_discount.toLocaleString()} ₽</span>
+                </td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <span class="badge bg-warning text-dark me-1">
+                            <i class="fas fa-star"></i> ${product.rating}
+                        </span>
+                    </div>
+                </td>
+                <td>
+                    <span class="badge bg-info">${product.review} отз.</span>
+                </td>
+                <td>
+                    <div>
+                        <span class="badge bg-danger">${discount}%</span>
+                        <small class="d-block text-success">-${discountAmount.toLocaleString()} ₽</small>
+                    </div>
+                </td>
+            </tr>
+        `;
+            }).join('');
+        }
+
+        // Обновление счетчика результатов
+        function updateResultsCount() {
+            const resultsCountEl = document.getElementById('resultsCount');
+            if (!resultsCountEl) return;
+
+            const count = currentProducts.length;
+            const total = originalProducts.length;
+            resultsCountEl.textContent = `Показано: ${count} из ${total} товаров`;
+        }
+
+        // Обновление графиков
+        function updateCharts() {
+            updatePriceHistogram();
+            updateDiscountRatingChart();
+        }
+
+        // Гистограмма цен
+        function updatePriceHistogram() {
+            const ctx = document.getElementById('priceHistogram')?.getContext('2d');
+            if (!ctx || currentProducts.length === 0) return;
+
+            const prices = currentProducts.map(p => p.price_discount);
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const range = maxPrice - minPrice;
+            const binCount = Math.min(8, currentProducts.length);
+            const binSize = range / binCount || 1;
+
+            const bins = Array(binCount).fill(0);
+            const labels = [];
+
+            for (let i = 0; i < binCount; i++) {
+                const start = minPrice + i * binSize;
+                const end = start + binSize;
+                labels.push(`${Math.round(start/1000)}k-${Math.round(end/1000)}k`);
+            }
+
+            prices.forEach(price => {
+                const binIndex = Math.min(Math.floor((price - minPrice) / binSize), binCount - 1);
+                bins[binIndex]++;
+            });
+
+            if (priceChart) {
+                priceChart.destroy();
+            }
+
+            priceChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Количество товаров',
+                        data: bins,
+                        backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Диапазон цен (₽)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // График скидка vs рейтинг
+        function updateDiscountRatingChart() {
+            const ctx = document.getElementById('discountRatingChart')?.getContext('2d');
+            if (!ctx || currentProducts.length === 0) return;
+
+            const data = currentProducts.map(product => ({
+                x: product.rating,
+                y: ((product.price_original - product.price_discount) / product.price_original * 100),
+                label: product.title.substring(0, 20) + '...'
+            }));
+
+            if (discountChart) {
+                discountChart.destroy();
+            }
+
+            discountChart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Товары',
+                        data: data,
+                        backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 2,
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const point = context.parsed;
+                                    return [
+                                        `Рейтинг: ${point.x}`,
+                                        `Скидка: ${point.y.toFixed(1)}%`,
+                                        `Товар: ${context.raw.label}`
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Рейтинг'
+                            },
+                            min: 4.0,
+                            max: 5.0
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Размер скидки (%)'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</head>
+<body class="bg-light">
+    <div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="text-center mb-4">
+                <i class="fas fa-mobile-alt me-2"></i>
+                Каталог товаров
+            </h1>
+        </div>
+    </div>
+
+    <!-- Фильтры -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-filter me-2"></i>
+                        Фильтры
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <!-- Цена -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Диапазон цен (₽)</label>
+                            <div class="row">
+                                <div class="col-6">
+                                    <label for="minPrice"></label><input type="number" id="minPrice" class="form-control" placeholder="От" min="0">
+                                </div>
+                                <div class="col-6">
+                                    <label for="maxPrice"></label><input type="number" id="maxPrice" class="form-control" placeholder="До" min="0">
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <label for="priceRange"></label><input type="range" id="priceRange" class="form-range" min="0" max="50000" step="100">
+                                <small class="text-muted">Макс: <span id="priceRangeValue">50000</span> ₽</small>
+                            </div>
+                        </div>
+
+                        <!-- Рейтинг -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Минимальный рейтинг</label>
+                            <label for="minRating"></label><select id="minRating" class="form-select">
+                                <option value="">Любой</option>
+                                <option value="4.0">4.0 и выше</option>
+                                <option value="4.5">4.5 и выше</option>
+                                <option value="4.8">4.8 и выше</option>
+                                <option value="5.0">Только 5.0</option>
+                            </select>
+                        </div>
+
+                        <!-- Отзывы -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Минимум отзывов</label>
+                            <label for="minReviews"></label><select id="minReviews" class="form-select">
+                                <option value="">Любое количество</option>
+                                <option value="10">От 10</option>
+                                <option value="50">От 50</option>
+                                <option value="100">От 100</option>
+                                <option value="500">От 500</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <button id="resetFilters" class="btn btn-outline-secondary">
+                                <i class="fas fa-undo me-1"></i>
+                                Сбросить фильтры
+                            </button>
+                            <span id="resultsCount" class="ms-3 text-muted"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Таблица и графики -->
+    <div class="row">
+        <!-- Таблица товаров -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-table me-2"></i>
+                        Список товаров
+                    </h5>
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-light btn-sm" id="sortName">
+                            Название <i class="fas fa-sort"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm" id="sortPrice">
+                            Цена <i class="fas fa-sort"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm" id="sortRating">
+                            Рейтинг <i class="fas fa-sort"></i>
+                        </button>
+                        <button class="btn btn-outline-light btn-sm" id="sortReviews">
+                            Отзывы <i class="fas fa-sort"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 600px;">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-dark sticky-top">
+                            <tr>
+                                <th>Название товара</th>
+                                <th>Цена</th>
+                                <th>Цена со скидкой</th>
+                                <th>Рейтинг</th>
+                                <th>Отзывы</th>
+                                <th>Скидка</th>
+                            </tr>
+                            </thead>
+                            <tbody id="productsTable">
+                            <!-- Динамическое содержимое -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Графики -->
+        <div class="col-lg-4">
+            <!-- Гистограмма цен -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-bar me-2"></i>
+                        Распределение цен
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <canvas id="priceHistogram" width="400" height="300"></canvas>
+                </div>
+            </div>
+
+            <!-- Линейный график -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0">
+                        <i class="fas fa-chart-line me-2"></i>
+                        Скидка vs Рейтинг
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <canvas id="discountRatingChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+
+
+

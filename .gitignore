@@ -1,0 +1,8 @@
+.venv
+venv
+.idea
+wildberries_scraper.log
+ekatalog_alternative/apps/base/migrations/*
+!ekatalog_alternative/apps/base/migrations/__init__.py
+.env.local
+.DS_Store
