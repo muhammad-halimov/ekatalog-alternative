@@ -3,6 +3,7 @@
 - Клонируем и создаем venv в директории проекта ```python3 -m venv venv```
 - Устанавливаем все зависимости в venv ```pip3 install -r requirements.txt```
 - Генерируем секретный ключ и ставим в файл .env.local (создать вручную или переименовать файл .env в .env.local. КОПИРУЕМ КЛЮЧ из терминала) ```python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'```
+- Создайте в MySQL или MariaDB, пустую БД с именем ekatalog
 - Делаем миграцию ```python3 manage.py makemigrations``` и ```python3 manage.py migrate```
 - Создаем админа ```python3 manage.py createsuperuser``` с почтой ```admin@admin.com``` и паролем ```foo```. ОБЯЗАТЕЛЬНО ТАКИЕ ДАННЫЕ
 - Запускаем проект ```python3 manage.py runserver``` и переходим в ```http://localhost:8000``` 
